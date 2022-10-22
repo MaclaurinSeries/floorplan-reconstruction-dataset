@@ -74,8 +74,36 @@ def process_image(os_filename, asset_dir, out_dir):
                 svg = str(soup)
                 bb = extract_BB(svg)
                 
-                bounding_box[floorplan.g.get('id')] = bb
+                if 'floors' not in bounding_box:
+                    bounding_box['floors'] = []
+                bounding_box['floors'].append(bb)
                 
+                furnitures = floorplan.select(".FixedFurniture")
+                
+                for furniture in furnitures:
+                    bound = furniture.find("g", {"class": "BoundaryPolygon"}).find("polygon")
+                    if bound is None or not bound.has_attr('points'):
+                        continue
+                    bound = bound["points"]
+                    bound = bound.split(' ')
+                    bound = np.array([
+                        list(map(float, (bound[0] + ",1").split(','))),
+                        list(map(float, (bound[2] + ",1").split(',')))
+                    ]).T
+                    
+                    matrix = furniture['transform']
+                    matrix = matrix[matrix.find("(") + 1 : matrix.find(")")]
+                    matt = list(map(float, matrix.split(",")))
+                    matrix = np.array([
+                        [matt[0], matt[1], matt[4]],
+                        [matt[2], matt[3], matt[5]],
+                        [0, 0, 1]])
+                    
+                    bound = np.dot(matrix, bound)
+                
+                    if furniture["class"] not in bounding_box:
+                        bounding_box[furniture["class"]] = []
+                    bounding_box[furniture["class"]].append(bound)
                 floorplan['style'] = "display: none;"
             
             for floorplan in floorplans:
@@ -91,12 +119,13 @@ def process_image(os_filename, asset_dir, out_dir):
     nimg, translation = remake_image(img, bg, scale=(1.3, 1.5), shift=(0.1, 0))
     
     # saving image with bounding box
-    for key,value in bounding_box.items():
-        trans = np.dot(translation, value).astype(int)
-        bounding_box[key] = trans
-        trans = trans.T
-        cv2.rectangle(nimg, trans[0], trans[1], (0,0,255), 1)
-        cv2.putText(nimg, key, trans[0], 0, 0.5, (0,0,255), 1//3)
+    for key,bb in bounding_box.items():
+        for value in bb:
+            trans = np.dot(translation, value).astype(int)
+            bounding_box[key] = trans
+            trans = trans.T
+            cv2.rectangle(nimg, trans[0], trans[1], (0,0,255), 1)
+            cv2.putText(nimg, key, trans[0], 0, 1, (0,0,255), 1)
         
     cv2.imwrite('saved.png', nimg[:,:,::-1])
 
