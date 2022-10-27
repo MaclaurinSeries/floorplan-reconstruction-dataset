@@ -1,12 +1,5 @@
 import sys, getopt, os, io
-import numpy as np
-from PIL import Image
-from bs4 import BeautifulSoup
-from cairosvg import svg2png
-from image_util import remake_image, open_rgb, open_rgba, get_bounding_box
-import cv2
-
-import matplotlib.pyplot as plt
+from FloorPlanSVG import FloorPlanSVG
 
 def main(argv):
     input_directory = '.\\input'
@@ -46,126 +39,13 @@ def main(argv):
 
 def process_image(os_filename, asset_dir, out_dir):
     # style_number = np.random.randint(0, 6)
+    
     style_number = 6
     
-    bounding_box = {}
-    
-    with open(os_filename) as fsvg:
-        svg = fsvg.read()
-        with open(f'{asset_dir}\\style\\style_{style_number}.css') as fstyle:
-            
-            soup = BeautifulSoup(svg, "xml")
-            
-            floorplans = soup.select("g[class=Floor]")
-
-            if (len(floorplans) > 2):
-                return None
-            
-            tag = soup.new_tag("style")
-            tag.string = fstyle.read()
-            soup.svg.g.insert_before(tag)
-
-            for floorplan in floorplans:
-                for s in floorplan.select('text'):
-                    s.extract()
-                
-                floorplan['style'] = ""
-                
-                svg = str(soup)
-                bb = extract_BB(svg)
-                
-                if 'floors' not in bounding_box:
-                    bounding_box['floors'] = []
-                bounding_box['floors'].append(bb)
-                
-                furnitures = floorplan.select(".FixedFurniture")
-                
-                for furniture in furnitures:
-                    bound = furniture.find("g", {"class": "BoundaryPolygon"}).find("polygon")
-                    if bound is None or not bound.has_attr('points'):
-                        continue
-                    bound = bound["points"]
-                    bound = bound.split(' ')
-                    bound = np.array([
-                        list(map(float, (bound[0] + ",1").split(','))),
-                        list(map(float, (bound[2] + ",1").split(',')))
-                    ]).T
-                    
-                    matrix = furniture['transform']
-                    matrix = matrix[matrix.find("(") + 1 : matrix.find(")")]
-                    matt = list(map(float, matrix.split(",")))
-                    matrix = np.array([
-                        [matt[0], matt[1], matt[4]],
-                        [matt[2], matt[3], matt[5]],
-                        [0, 0, 1]])
-                    
-                    bound = np.dot(matrix, bound)
-                
-                    if furniture["class"] not in bounding_box:
-                        bounding_box[furniture["class"]] = []
-                    bounding_box[furniture["class"]].append(bound)
-                floorplan['style'] = "display: none;"
-            
-            for floorplan in floorplans:
-                floorplan['style'] = ""
-                
-        svg = str(soup)
-        
-    mem = io.BytesIO()
-    svg2png(bytestring=svg, write_to=mem)
-    img = np.array(Image.open(mem))
-    
-    bg = open_rgb(f'{asset_dir}\\background\\bg_{style_number}.jpg')
-    nimg, translation = remake_image(img, bg, scale=(1.3, 1.5), shift=(0.1, 0))
-    
-    # saving image with bounding box
-    for key,bb in bounding_box.items():
-        for value in bb:
-            trans = np.dot(translation, value).astype(int)
-            bounding_box[key] = trans
-            trans = trans.T
-            cv2.rectangle(nimg, trans[0], trans[1], (0,0,255), 1)
-            cv2.putText(nimg, key, trans[0], 0, 1, (0,0,255), 1)
-        
-    cv2.imwrite('saved.png', nimg[:,:,::-1])
-
-def extract_BB(svg):
-    mem = io.BytesIO()
-    svg2png(bytestring=svg, write_to=mem)
-    img = np.array(Image.open(mem))
-    
-    xl, yl, xr, yr = get_bounding_box(img)
-    
-#     return [
-#         [yr, yl, yl, yr, yr],
-#         [xl, xl, xr, xr, xl],
-#         [1, 1, 1, 1, 1]
-#     ]
-    return [
-        [yl, yr],
-        [xl, xr],
-        [1, 1]
-    ]
-
-def apply_style(svg, style):
-    with open(style) as f:
-        soup = BeautifulSoup(svg, "xml")
-        
-        if (len(soup.find_all("div", {"class": "Floorplan"})) > 2):
-            return None
-
-        for s in soup.select('text'):
-            s.extract()
-        
-        tag = soup.new_tag("style")
-        tag.string = f.read()
-        soup.svg.g.insert_before(tag)
-        
-        soup.svg.g.g.attrs["filter"] = "url(#texture)"
-        
-        svg = str(soup)
-        
-    return svg
+    floorplan = FloorPlanSVG(f'.\\{os_filename}', asset_dir)
+    floorplan.set_style(f'style_{style_number}')
+    floorplan.set_background(f'bg_{style_number}')
+    floorplan.save_image()
             
 if __name__ == "__main__":
     main(sys.argv[1:])

@@ -2,42 +2,74 @@ import numpy as np
 from PIL import Image
 import cv2
 
-def get_bounding_box(img):
+def get_floorplan_bounding_box(img):
+    '''
+    Mengembalikan bounding-box dari denahh lantai
+    yang diberikan.
+        
+    Bounding-box dianggap koordinat tepi yang tidak
+    putih.
+    '''
+    
+    # jika gambar RGBA, ambil channel terakhir bwt dijadiin putih
     if img.shape[2] > 3:
         img = Image.fromarray(img)
         imgwhite = Image.new("RGB", img.size, (255, 255, 255))
         imgwhite.paste(img, mask=img.split()[3])
         img = np.array(imgwhite)
     
+    # simpan koordinat yang tidak putih
     x, y = np.where(np.all(img != [255, 255, 255], axis=2))
-    return x[np.argmin(x)], y[np.argmin(y)], x[np.argmax(x)], y[np.argmax(y)]
+    
+    # kembalikan titik paling atas, kiri, bawah, kanan
+    return x[np.argmin(x)] - 1, y[np.argmin(y)] - 1, x[np.argmax(x)] + 1, y[np.argmax(y)] + 1
 
 def resize_image(img, height=-1, width=-1):
+    '''
+    Mengganti ukuran gambar sesuai input.
+    '''
+    
+    # tidak ada perubahan width dan height
     if width == -1 and height == -1:
         return img
     
+    image_ratio = img.shape[0] / img.shape[1]
+    
+    # jika tidak ada perubahan salah satu ukuran
+    # image rationya dipertahankan
     if height == -1:
-        height = int(width * img.shape[0] / img.shape[1])
+        height = int(width * image_ratio)
     if width == -1:
-        width = int(height * img.shape[1] / img.shape[0])
+        width = int(height / image_ratio)
     
-    nimg = cv2.resize(img, dsize=(height, width), interpolation=cv2.INTER_CUBIC)
+    new_img = cv2.resize(img, dsize=(height, width), interpolation=cv2.INTER_CUBIC)
     
-    return nimg
+    return new_img[:,:,::-1]
 
-def remake_image(img, bg, scale=(1,1), shift=(0,0), W=-1, H=-1):
+def remake_image(img, bg, scale: tuple = (1,1), shift: tuple = (0,0), W: int = -1, H: int = -1):
+    '''
+    Menempelkan denah rumah pada background noise.
+    Denah rumah memiliki 4 channel, channel ke-empat opacity
+    
+    Scale digunakan untuk mengatur ukuran gambar final,
+    dengan faktor terhadap width dan height img.
+    
+    Shift mengatur seberapa jauh perpindahan img pada bg,
+    respektif terhadap ukuran gambar.
+    '''
+    
     mask = img[:,:,3] > 0
     
-    shp = img.shape
-    nshp = (int(shp[1] * scale[1]),
-            int(shp[0] * scale[0]))
-    new_img = cv2.resize(bg, dsize=nshp, interpolation=cv2.INTER_CUBIC)
+    shape = img.shape
+    new_shape = (int(shape[1] * scale[1]),
+                 int(shape[0] * scale[0]))
+    new_img = cv2.resize(bg, dsize=new_shape, interpolation=cv2.INTER_CUBIC)
     
-    loc = (int((nshp[1] // 2 - shp[0] // 2) * (shift[0] + 1)),
-           int((nshp[0] // 2 - shp[1] // 2) * (shift[1] + 1)))
+    loc = (int((new_shape[1] // 2 - shape[0] // 2) * (shift[0] + 1)),
+           int((new_shape[0] // 2 - shape[1] // 2) * (shift[1] + 1)))
     
-    new_img[loc[0] : loc[0] + shp[0],
-            loc[1] : loc[1] + shp[1],
+    new_img[loc[0] : loc[0] + shape[0],
+            loc[1] : loc[1] + shape[1],
             : ][mask] = img[:,:,:3][mask]
     
     translation = np.array([
@@ -53,8 +85,8 @@ def remake_image(img, bg, scale=(1,1), shift=(0,0), W=-1, H=-1):
     W = resized_img.shape[1]
     
     translation = np.dot(np.array([
-        [H / nshp[0], 0],
-        [0, W / nshp[1]],
+        [H / new_shape[0], 0],
+        [0, W / new_shape[1]],
     ]), translation)
     
     return resized_img, translation
