@@ -3,7 +3,11 @@ import numpy as np
 from PIL import Image
 from bs4 import BeautifulSoup
 from cairosvg import svg2png
-from image_util import remake_image, open_rgb, open_rgba, get_floorplan_bounding_box
+from ImageUtil import remakeImage, openRgb, getFloorplanBoundingBox
+from PIL import Image
+from rasterio.features import shapes
+from sklearn.neighbors import KernelDensity
+from scipy.signal import argrelextrema
 import cv2
 import json
 
@@ -21,29 +25,29 @@ class FloorPlanSVG:
         self.selected_style = None
         self.selected_background = None
         
-        self.set_style('mask')
-        
         for text_tag in self.structure.select('text'):
             text_tag.extract()
         
-        self.bounding_boxes = {}
+        self.structure.svg.attrs['shape-rendering'] = "crispEdges"
         
-        self.extract_floor_BB()
-        self.extract_fixed_furniture_BB()
-        self.extract_stairs_BB()
+        self.bounding_boxes = {}
+        self.boundaries = {}
+        
+        self.extractFloorBB()
+        self.extractBoundaries()
     
-    def set_background(self, background):
+    def setBackground(self, background):
         if not isinstance(background, str):
             return
         
         background_directory = f'{self.asset_directory}\\background\\{background}.jpg'
         
         if os.path.exists(os.path.dirname(background_directory)):
-            s = open_rgb(background_directory)
+            s = openRgb(background_directory)
             self.background = s
             self.selected_background = background
     
-    def set_style(self, style):
+    def setStyle(self, style):
         if not isinstance(style, str):
             return
         
@@ -63,11 +67,11 @@ class FloorPlanSVG:
             self.structure.svg.g.insert_before(tag)
             self.selected_style = style
         
-    def get_floorplan_count(self):
+    def getFloorplanCount(self):
         floorplans = self.structure.select("g[class=Floor]")
         return len(floorplans)
     
-    def get_image(self):
+    def getImage(self):
         svg = str(self.structure)
         
         mem = io.BytesIO()
@@ -75,7 +79,7 @@ class FloorPlanSVG:
         
         return np.array(Image.open(mem))
     
-    def get_bounding_boxes(self, json=False, outfile=None):
+    def getBoundingBoxes(self, json=False, outfile=None):
         if json:
             return json.dumps(self.bounding_boxes, indent=4)
         if outfile is None:
@@ -84,54 +88,83 @@ class FloorPlanSVG:
         with open(outfile, "w") as f:
             json.dump(self.bounding_boxes, f)
     
-    def save_image(self, target_directory='saved.png', with_bounding_box=True):
-        img = self.get_image()
-        cv2.imwrite(target_directory, img)
+    def saveImage(self, target_directory='saved.png', with_bounding_box=True, with_boundaries=True):
+        self.structure.svg.attrs.pop('shape-rendering')
+        img = self.getImage()
+        self.structure.svg.attrs['shape-rendering'] = "crispEdges"
+        
         transformation = np.array([
             [1, 0, 0],
             [0, 1, 0]
         ])
         
         if self.background is not None:
-            img, transformation = remake_image(
+            img, transformation = remakeImage(
                 img,
                 self.background,
                 scale=(1.3, 1.5),
-                shift=(0.1, 0)
+                shift=(0.1, 0),
+                W=(1000 + np.random.randint(40) * 10)
             )
+        else:
+            img = img[:,:,:3]
         
-        for key,bounding_box_list in self.bounding_boxes.items():
-            for value in bounding_box_list:
-                
-                transformed = np.dot(transformation, value).astype(int).T
-                
-                cv2.rectangle(img, transformed[0], transformed[1], (0,0,255), 1)
-                cv2.putText(img, key, transformed[0], 0, 1, (0,0,255), 1)
+        if not with_bounding_box and not with_boundaries:
+            cv2.imwrite(target_directory, img)
+            
+        if with_bounding_box:
+            for key,bounding_box_list in self.bounding_boxes.items():
+                for value in bounding_box_list:
 
+                    transformed = np.dot(transformation, value).astype(int).T
+
+                    cv2.rectangle(img, transformed[0,1::-1], transformed[1,1::-1], (0,0,255), 1)
+                    cv2.putText(img, key[1] + "-" + str(key[0]), transformed[0,1::-1], 0, 1, (0,0,255), 1)
+        if with_boundaries:
+            color = {
+                'Wall': (255, 0, 0),
+                'Door': (0, 255, 0),
+                'Window': (0, 0, 0),
+                'Floor': (0, 0, 255),
+            }
+            for key,boundary in self.boundaries.items():
+                for value in boundary:
+                    
+                    transformed = np.dot(transformation, value).astype(int).T
+
+                    cv2.polylines(img, [transformed[:,1::-1]], True, color[key[1]], 2)
         cv2.imwrite(target_directory, img[:,:,::-1])
     
-    def extract_floor_BB(self):
+    def extractFloorBB(self):
+        self.setStyle('mask')
+        
         floorplans = self.structure.select("g[class=Floor]")
         
-        self.house_floor_visibility(False)
+        self.houseFloorVisibility(False)
+        
+        index = 0
             
         for floorplan in floorplans:
             floorplan['style'] = ""
-            img = self.get_image()
+            img = self.getImage()
             
-            xl, yl, xr, yr = get_floorplan_bounding_box(img)
+            top_left, bottom_right = getFloorplanBoundingBox(img)
             
-            self.insert_bounding_box('Floor', np.array([
-                [yl, yr],
-                [xl, xr],
-                [1, 1]
+            self.insertBoundingBox('Floor', index, np.array([
+                [top_left[0], bottom_right[0]],
+                [top_left[1], bottom_right[1]],
+                [1, 1],
             ]))
+            self.extractFixedFurnitureBB(floorplan, index)
+            self.extractStairsBB(floorplan, index)
             floorplan['style'] = "display: none;"
             
-        self.house_floor_visibility(True)
+            index += 1
+            
+        self.houseFloorVisibility(True)
     
-    def extract_fixed_furniture_BB(self):
-        furnitures = self.structure.select(".FixedFurniture")
+    def extractFixedFurnitureBB(self, floor, parent):
+        furnitures = floor.select(".FixedFurniture")
                 
         for furniture in furnitures:
             bound = furniture.find("g", {"class": "BoundaryPolygon"}).find("polygon")
@@ -139,21 +172,18 @@ class FloorPlanSVG:
                 continue
             bound = bound["points"]
             bound = bound.split(' ')[:4]
-            bound = [list(map(float, (a + ",1").split(','))) for a in bound]
-            bound.sort()
-            bound = np.array([
-                bound[0],
-                bound[1],
-                bound[2],
-                bound[3]
-            ]).T
+            bound = np.array([list(map(np.float32, a.split(','))) for a in bound])
+            bound = np.vstack((
+                bound.T[::-1,:],
+                np.array([1, 1, 1, 1])
+            ))
 
             matrix = furniture['transform']
             matrix = matrix[matrix.find("(") + 1 : matrix.find(")")]
-            matt = list(map(float, matrix.split(",")))
+            matt = list(map(np.float32, matrix.split(",")))
             matrix = np.array([
-                [matt[0], matt[2], matt[4]],
-                [matt[1], matt[3], matt[5]],
+                [matt[3], matt[1], matt[5]],
+                [matt[2], matt[0], matt[4]],
                 [.0, .0, 1.0]])
 
             bound = np.dot(matrix, bound)
@@ -161,24 +191,24 @@ class FloorPlanSVG:
             if furniture.parent["class"] == "FixedFurnitureSet":
                 matrix = furniture.parent['transform']
                 matrix = matrix[matrix.find("(") + 1 : matrix.find(")")]
-                matt = list(map(float, matrix.split(",")))
+                matt = list(map(np.float32, matrix.split(",")))
                 matrix = np.array([
-                    [matt[0], matt[2], matt[4]],
-                    [matt[1], matt[3], matt[5]],
+                    [matt[3], matt[1], matt[5]],
+                    [matt[2], matt[0], matt[4]],
                     [.0, .0, 1.0]])
 
                 bound = np.dot(matrix, bound)
-
-            bound = np.sort(bound.astype(int))[:,1:3]
+            
+            bound = np.sort(bound.astype(np.uint32))[:,0::3]
 
             key = furniture["class"].split(" ")
             key.remove("FixedFurniture")
             key = " ".join(key)
 
-            self.insert_bounding_box(key, bound)
+            self.insertBoundingBox(key, parent, bound)
             
-    def extract_stairs_BB(self):
-        stairs = self.structure.select(".Stairs")
+    def extractStairsBB(self, floor, parent):
+        stairs = floor.select(".Stairs")
                 
         for stair in stairs:
             bound = stair.find("g", {"class": "Flight"}).find("polygon")
@@ -186,20 +216,55 @@ class FloorPlanSVG:
                 continue
             bound = bound["points"]
             bound = bound.split(' ')[:4]
-            bound = [list(map(float, (a + ",1").split(','))) for a in bound]
-            bound.sort()
-            bound = np.array([
-                bound[0],
-                bound[1],
-                bound[2],
-                bound[3]
-            ]).T
+            bound = np.array([list(map(np.float32, a.split(','))) for a in bound])
+            bound = np.vstack((
+                bound.T[::-1,:],
+                np.array([1, 1, 1, 1])
+            ))
 
-            bound = np.sort(bound.astype(int))[:,1:3]
-
-            self.insert_bounding_box("Stairs", bound)
+            bound = np.sort(bound.astype(np.uint32))[:,0::3]
+            self.insertBoundingBox("Stairs", parent, bound)
     
-    def house_floor_visibility(self, visible=True):
+    def extractBoundaries(self):
+        def PolyArea(x,y):
+            return .5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+        
+        self.setStyle('boundaries')
+        
+        floorplans = self.structure.select("g[class=Floor]")
+        
+        self.houseFloorVisibility(False)
+        
+        index = 0
+        
+        label = ['', 'Wall', 'Door', 'Window', 'Floor']
+        
+        for floorplan in floorplans:
+            floorplan['style'] = ""
+            img = self.getImage()
+            img = Image.fromarray(img).convert('P', palette=Image.Palette.ADAPTIVE, colors=5)
+            img = np.array(img)
+            total = img.shape[0] * img.shape[1]
+            
+            for i in range(1,5):
+                F = (img == i).astype(np.int32)
+
+                poly = (s for i, (s, v) in enumerate(shapes(F)))
+
+                for l in poly:
+                    pts = np.array(l['coordinates'][0], dtype=np.int32)
+                    area = PolyArea(pts[:,0], pts[:,1])
+                    pts = np.apply_along_axis(lambda a: [1, *a], 1, pts)[:,::-1].T
+                    if 2 * area < total:
+                        self.insertBoundary(label[i], index, pts)
+            
+            floorplan['style'] = "display: none;"
+            
+            index += 1
+            
+        self.houseFloorVisibility(True)
+    
+    def houseFloorVisibility(self, visible=True):
         floorplans = self.structure.select("g[class=Floor]")
         
         display = "display: none;"
@@ -208,7 +273,14 @@ class FloorPlanSVG:
         for floorplan in floorplans:
             floorplan['style'] = display
     
-    def insert_bounding_box(self, key, bounding_box):
-        if key not in self.bounding_boxes:
-            self.bounding_boxes[key] = []
-        self.bounding_boxes[key].append(bounding_box)
+    def insertBoundingBox(self, key, parent, bounding_box):
+        dct_key = (parent, key)
+        if dct_key not in self.bounding_boxes:
+            self.bounding_boxes[dct_key] = []
+        self.bounding_boxes[dct_key].append(bounding_box)
+    
+    def insertBoundary(self, key, parent, boundary):
+        dct_key = (parent, key)
+        if dct_key not in self.boundaries:
+            self.boundaries[dct_key] = []
+        self.boundaries[dct_key].append(boundary)

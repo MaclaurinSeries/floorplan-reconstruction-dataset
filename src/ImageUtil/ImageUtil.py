@@ -2,9 +2,17 @@ import numpy as np
 from PIL import Image
 import cv2
 
-def get_floorplan_bounding_box(img):
+__all__ = [
+    'getFloorplanBoundingBox',
+    'resizeImage',
+    'remakeImage',
+    'openRgb',
+    'openRgba'
+]
+
+def getFloorplanBoundingBox(img):
     '''
-    Mengembalikan bounding-box dari denahh lantai
+    Mengembalikan bounding-box dari denah lantai
     yang diberikan.
         
     Bounding-box dianggap koordinat tepi yang tidak
@@ -19,12 +27,12 @@ def get_floorplan_bounding_box(img):
         img = np.array(imgwhite)
     
     # simpan koordinat yang tidak putih
-    x, y = np.where(np.all(img != [255, 255, 255], axis=2))
+    y, x = np.where(np.all(img != [255, 255, 255], axis=2))
     
     # kembalikan titik paling atas, kiri, bawah, kanan
-    return x[np.argmin(x)] - 1, y[np.argmin(y)] - 1, x[np.argmax(x)] + 1, y[np.argmax(y)] + 1
+    return (y[np.argmin(y)] - 1, x[np.argmin(x)] - 1), (y[np.argmax(y)] + 1, x[np.argmax(x)] + 1)
 
-def resize_image(img, height=-1, width=-1):
+def resizeImage(img, height=-1, width=-1):
     '''
     Mengganti ukuran gambar sesuai input.
     '''
@@ -42,11 +50,12 @@ def resize_image(img, height=-1, width=-1):
     if width == -1:
         width = int(height / image_ratio)
     
-    new_img = cv2.resize(img, dsize=(height, width), interpolation=cv2.INTER_CUBIC)
+    # proses resizing
+    new_img = cv2.resize(img, dsize=(width, height), interpolation=cv2.INTER_CUBIC)
     
     return new_img[:,:,::-1]
 
-def remake_image(img, bg, scale: tuple = (1,1), shift: tuple = (0,0), W: int = -1, H: int = -1):
+def remakeImage(img, bg, scale: tuple = (1,1), shift: tuple = (0,0), W: int = -1, H: int = -1):
     '''
     Menempelkan denah rumah pada background noise.
     Denah rumah memiliki 4 channel, channel ke-empat opacity
@@ -61,37 +70,39 @@ def remake_image(img, bg, scale: tuple = (1,1), shift: tuple = (0,0), W: int = -
     mask = img[:,:,3] > 0
     
     shape = img.shape
-    new_shape = (int(shape[1] * scale[1]),
-                 int(shape[0] * scale[0]))
-    new_img = cv2.resize(bg, dsize=new_shape, interpolation=cv2.INTER_CUBIC)
+    new_shape = (int(shape[0] * scale[0]),
+                 int(shape[1] * scale[1]))
+    new_img = cv2.resize(bg, dsize=(new_shape[1], new_shape[0]), interpolation=cv2.INTER_CUBIC)
     
-    loc = (int((new_shape[1] // 2 - shape[0] // 2) * (shift[0] + 1)),
-           int((new_shape[0] // 2 - shape[1] // 2) * (shift[1] + 1)))
+    loc = (int((new_shape[0] // 2 - shape[0] // 2) * (shift[0] + 1)),
+           int((new_shape[1] // 2 - shape[1] // 2) * (shift[1] + 1)))
     
     new_img[loc[0] : loc[0] + shape[0],
             loc[1] : loc[1] + shape[1],
             : ][mask] = img[:,:,:3][mask]
     
     translation = np.array([
-        [1, 0, loc[1]],
-        [0, 1, loc[0]],
+        [1, 0, loc[0]],
+        [0, 1, loc[1]],
+        [0, 0, 1]
     ])
     
     if W == -1 and H == -1:
         return new_img, translation
     
-    resized_img = resize_image(new_img, H, W)
+    resized_img = resizeImage(new_img, H, W)
     H = resized_img.shape[0]
     W = resized_img.shape[1]
     
     translation = np.dot(np.array([
-        [H / new_shape[0], 0],
-        [0, W / new_shape[1]],
+        [H / new_shape[0], 0, 0],
+        [0, W / new_shape[1], 0],
+        [0, 0, 1]
     ]), translation)
     
-    return resized_img, translation
+    return resized_img[:,:,::-1], translation
 
-def open_rgb(path):
+def openRgb(path):
     img = Image.open(path)
     
     if len(img.getbands()) <= 3:
@@ -102,12 +113,12 @@ def open_rgb(path):
     
     return np.asarray(background)
 
-def open_rgba(path):
+def openRgba(path):
     img = Image.open(path)
     
     return np.asarray(img)
 
-def similarity_feature(img1, img2):
+def similarityFeature(img1, img2):
     MIN_MATCHES = 50
     
     img1 = cv2.cvtColor(img1,cv2.COLOR_BGR2GRAY)
