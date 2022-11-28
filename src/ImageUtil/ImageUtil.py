@@ -1,36 +1,37 @@
 import numpy as np
 from PIL import Image
+from rasterio.features import shapes
+from scipy import ndimage
 import cv2
 
 __all__ = [
-    'getFloorplanBoundingBox',
+    'getFloorplanPolygon',
     'resizeImage',
     'remakeImage',
     'openRgb',
     'openRgba'
 ]
 
-def getFloorplanBoundingBox(img):
-    '''
-    Mengembalikan bounding-box dari denah lantai
-    yang diberikan.
-        
-    Bounding-box dianggap koordinat tepi yang tidak
-    putih.
-    '''
-    
-    # jika gambar RGBA, ambil channel terakhir bwt dijadiin putih
+
+def getFloorplanPolygon(img):
     if img.shape[2] > 3:
         img = Image.fromarray(img)
         imgwhite = Image.new("RGB", img.size, (255, 255, 255))
         imgwhite.paste(img, mask=img.split()[3])
         img = np.array(imgwhite)
-    
-    # simpan koordinat yang tidak putih
-    y, x = np.where(np.all(img != [255, 255, 255], axis=2))
-    
-    # kembalikan titik paling atas, kiri, bawah, kanan
-    return (y[np.argmin(y)] - 1, x[np.argmin(x)] - 1), (y[np.argmax(y)] + 1, x[np.argmax(x)] + 1)
+
+    binary = np.all(img != [255, 255, 255], axis=2)
+    binary = ndimage.binary_fill_holes(binary)
+
+    poly = (s for i, (s, v) in enumerate(shapes(binary.astype(np.uint8), mask=binary)))
+    results = []
+
+    for l in poly:
+        pts = np.array(l['coordinates'][0], dtype=np.int32).T
+        results.append(pts[::-1])
+
+    return results
+
 
 def resizeImage(img, height=-1, width=-1):
     '''
@@ -54,6 +55,7 @@ def resizeImage(img, height=-1, width=-1):
     new_img = cv2.resize(img, dsize=(width, height), interpolation=cv2.INTER_CUBIC)
     
     return new_img[:,:,::-1]
+
 
 def remakeImage(img, bg, scale: tuple = (1,1), shift: tuple = (0,0), W: int = -1, H: int = -1):
     '''
@@ -102,6 +104,7 @@ def remakeImage(img, bg, scale: tuple = (1,1), shift: tuple = (0,0), W: int = -1
     
     return resized_img[:,:,::-1], translation
 
+
 def openRgb(path):
     img = Image.open(path)
     
@@ -113,10 +116,12 @@ def openRgb(path):
     
     return np.asarray(background)
 
+
 def openRgba(path):
     img = Image.open(path)
     
     return np.asarray(img)
+
 
 def similarityFeature(img1, img2):
     MIN_MATCHES = 50

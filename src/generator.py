@@ -2,6 +2,7 @@ import sys, getopt, os, io
 import argparse
 from FloorPlanSVG import FloorPlanSVG
 
+
 def main(args):
     for folder in os.scandir(args.input_directory):
         if folder.is_dir():
@@ -11,6 +12,7 @@ def main(args):
         elif folder.is_file() and folder.name.endswith(".svg"):
             process_image(folder.name, args.asset_directory, args.output_directory)
 
+
 def process_image(os_filename, asset_dir, out_dir):
     # style_number = np.random.randint(0, 6)
     
@@ -18,10 +20,12 @@ def process_image(os_filename, asset_dir, out_dir):
     
     floorplan = FloorPlanSVG(f'.\\{os_filename}', asset_dir)
     floorplan.setStyle(f'style_{style_number}')
+    print(floorplan.getFloorplanCount())
 #     floorplan.setStyle('boundaries')
     floorplan.setBackground(f'bg_{style_number}')
-    floorplan.saveImage(with_bounding_box=True, with_boundaries=True)
-            
+    floorplan.saveStructure()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog = 'DataSet Generator',

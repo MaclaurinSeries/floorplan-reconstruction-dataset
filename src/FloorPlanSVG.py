@@ -3,50 +3,123 @@ import numpy as np
 from PIL import Image
 from bs4 import BeautifulSoup
 from cairosvg import svg2png
-from ImageUtil import remakeImage, openRgb, getFloorplanBoundingBox
+from ImageUtil import remakeImage, openRgb, getFloorplanPolygon, qualityReduction, addNoise
+import HouseConfig as Mapper
 from PIL import Image
 from rasterio.features import shapes
-from sklearn.neighbors import KernelDensity
-from scipy.signal import argrelextrema
 import cv2
 import json
+import nanoid.generate
+
+__all__ = ['FloorPlanSVG']
+
+namechar = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 
 class FloorPlanSVG:
     def __init__(self, svg, asset_dir):
         s = svg
-        
+
         if os.path.exists(os.path.dirname(svg)):
             with open(svg) as f:
-                s = f.read()
-            
-        self.structure = BeautifulSoup(s, "xml")
-        self.background = None
+                svgstr = f.read()
+
+        self.structure = BeautifulSoup(svgstr, "xml")
         self.asset_directory = asset_dir
-        self.selected_style = None
-        self.selected_background = None
-        
+
+        self.background = None
+        self.floors = []
+
+        self.__preprocessing()
+
+
+    def __preprocessing(self):
         for text_tag in self.structure.select('text'):
             text_tag.extract()
+
+        self.__extractFloor()
+
+
+    def __extractFloor(self):
+        self.setStyle('mask')
+        self.__houseFloorVisibility(True)
+        self.floors = getFloorplanPolygon(
+            self.__getImage('crispEdges')
+        )
+
+
+    def __houseFloorVisibility(self, visible=True):
+        floorplans = self.structure.select("g[class=Floor]")
         
-        self.structure.svg.attrs['shape-rendering'] = "crispEdges"
+        display = "display: none;"
+        if visible: display = ""
         
-        self.bounding_boxes = {}
-        self.boundaries = {}
+        for floorplan in floorplans:
+            floorplan['style'] = display
+
+
+    def __getImage(self, shape_rendering='geometricPrecision'):
+        self.structure.svg.attrs['shape-rendering'] = shape_rendering
+
+        svg = str(self.structure)
+        mem = io.BytesIO()
+        svg2png(bytestring=svg, write_to=mem)
+
+        self.structure.svg.attrs['shape-rendering'] = 'crispEdges'
+        return np.array(Image.open(mem))
+
+
+    def __saveImage(self, directory):
+        img = self.__getImage()
         
-        self.extractFloorBB()
-        self.extractBoundaries()
-    
+        transformation = np.array([
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ])
+
+        if self.background is not None:
+            img, transformation = remakeImage(
+                img,
+                self.background,
+                scale=(1.3, 1.5),
+                shift=(0.1, 0),
+                W=(1000 + np.random.randint(40) * 10)
+            )
+        else:
+            img = img[:,:,:3]
+
+        img = qualityReduction(img)
+        img = addNoise(img, 'poisson')
+
+        stat = cv2.imwrite(directory, img[:,:,::-1])
+
+        # return transformation
+
+
+    def __saveFloorsPoly(self, transformation, directory):
+        for floor_bounding_box in self.floors:
+            value = np.vstack((floor_bounding_box, np.ones((floor_bounding_box.shape[1]))))
+            transformed = np.dot(transformation, value).astype(int).T[:,:2].reshape((-1,1,2))
+
+        return
+
+
+    def __preprocessGraph(self, fileID):
+        raise NotImplementedError
+        return
+
+
     def setBackground(self, background):
         if not isinstance(background, str):
             return
-        
+
         background_directory = f'{self.asset_directory}\\background\\{background}.jpg'
-        
+
         if os.path.exists(os.path.dirname(background_directory)):
             s = openRgb(background_directory)
             self.background = s
-            self.selected_background = background
-    
+
+
     def setStyle(self, style):
         if not isinstance(style, str):
             return
@@ -65,107 +138,27 @@ class FloorPlanSVG:
             tag = self.structure.new_tag("style")
             tag.string = s
             self.structure.svg.g.insert_before(tag)
-            self.selected_style = style
-        
+
+
     def getFloorplanCount(self):
-        floorplans = self.structure.select("g[class=Floor]")
-        return len(floorplans)
-    
-    def getImage(self):
-        svg = str(self.structure)
-        
-        mem = io.BytesIO()
-        svg2png(bytestring=svg, write_to=mem)
-        
-        return np.array(Image.open(mem))
-    
-    def getBoundingBoxes(self, json=False, outfile=None):
-        if json:
-            return json.dumps(self.bounding_boxes, indent=4)
-        if outfile is None:
-            return self.bounding_boxes
-        
-        with open(outfile, "w") as f:
-            json.dump(self.bounding_boxes, f)
-    
-    def saveImage(self, target_directory='saved.png', with_bounding_box=True, with_boundaries=True):
-        self.structure.svg.attrs.pop('shape-rendering')
-        img = self.getImage()
-        self.structure.svg.attrs['shape-rendering'] = "crispEdges"
-        
-        transformation = np.array([
-            [1, 0, 0],
-            [0, 1, 0]
-        ])
-        
-        if self.background is not None:
-            img, transformation = remakeImage(
-                img,
-                self.background,
-                scale=(1.3, 1.5),
-                shift=(0.1, 0),
-                W=(1000 + np.random.randint(40) * 10)
-            )
-        else:
-            img = img[:,:,:3]
-        
-        if not with_bounding_box and not with_boundaries:
-            cv2.imwrite(target_directory, img)
-            
-        if with_bounding_box:
-            for key,bounding_box_list in self.bounding_boxes.items():
-                for value in bounding_box_list:
+        return len(self.floors)
 
-                    transformed = np.dot(transformation, value).astype(int).T
 
-                    cv2.rectangle(img, transformed[0,1::-1], transformed[1,1::-1], (0,0,255), 1)
-                    cv2.putText(img, key[1] + "-" + str(key[0]), transformed[0,1::-1], 0, 1, (0,0,255), 1)
-        if with_boundaries:
-            color = {
-                'Wall': (255, 0, 0),
-                'Door': (0, 255, 0),
-                'Window': (0, 0, 0),
-                'Floor': (0, 0, 255),
-            }
-            for key,boundary in self.boundaries.items():
-                for value in boundary:
-                    
-                    transformed = np.dot(transformation, value).astype(int).T
+    def saveStructure(self, target_directory='./__collection__'):
+        fileID = nanoid.generate(namechar, 16)
 
-                    cv2.polylines(img, [transformed[:,1::-1]], True, color[key[1]], 2)
-        cv2.imwrite(target_directory, img[:,:,::-1])
-    
-    def extractFloorBB(self):
-        self.setStyle('mask')
-        
-        floorplans = self.structure.select("g[class=Floor]")
-        
-        self.houseFloorVisibility(False)
-        
-        index = 0
-            
-        for floorplan in floorplans:
-            floorplan['style'] = ""
-            img = self.getImage()
-            
-            top_left, bottom_right = getFloorplanBoundingBox(img)
-            
-            self.insertBoundingBox('Floor', index, np.array([
-                [top_left[0], bottom_right[0]],
-                [top_left[1], bottom_right[1]],
-                [1, 1],
-            ]))
-            self.extractFixedFurnitureBB(floorplan, index)
-            self.extractStairsBB(floorplan, index)
-            floorplan['style'] = "display: none;"
-            
-            index += 1
-            
-        self.houseFloorVisibility(True)
-    
+        transformation = self.__saveImage(
+            f'{target_directory}/roi-detection/image/{fileID}.input.generated.png'
+        )
+        # self.__saveFloorsPoly(
+        #     transformation,
+        #     f'{target_directory}/floors_poly/{fileID}.floors_poly.png'
+        # )
+
+
     def extractFixedFurnitureBB(self, floor, parent):
         furnitures = floor.select(".FixedFurniture")
-                
+        
         for furniture in furnitures:
             bound = furniture.find("g", {"class": "BoundaryPolygon"}).find("polygon")
             if bound is None or not bound.has_attr('points'):
@@ -184,7 +177,8 @@ class FloorPlanSVG:
             matrix = np.array([
                 [matt[3], matt[1], matt[5]],
                 [matt[2], matt[0], matt[4]],
-                [.0, .0, 1.0]])
+                [.0, .0, 1.0]
+            ])
 
             bound = np.dot(matrix, bound)
 
@@ -195,21 +189,21 @@ class FloorPlanSVG:
                 matrix = np.array([
                     [matt[3], matt[1], matt[5]],
                     [matt[2], matt[0], matt[4]],
-                    [.0, .0, 1.0]])
+                    [.0, .0, 1.0]
+                ])
 
                 bound = np.dot(matrix, bound)
             
             bound = np.sort(bound.astype(np.uint32))[:,0::3]
 
-            key = furniture["class"].split(" ")
-            key.remove("FixedFurniture")
-            key = " ".join(key)
+            key = furniture["class"].split(" ")[1]
+            key = Mapper.getIconName(key)
 
             self.insertBoundingBox(key, parent, bound)
             
     def extractStairsBB(self, floor, parent):
         stairs = floor.select(".Stairs")
-                
+        
         for stair in stairs:
             bound = stair.find("g", {"class": "Flight"}).find("polygon")
             if bound is None or not bound.has_attr('points'):
@@ -233,7 +227,7 @@ class FloorPlanSVG:
         
         floorplans = self.structure.select("g[class=Floor]")
         
-        self.houseFloorVisibility(False)
+        self.__houseFloorVisibility(False)
         
         index = 0
         
@@ -241,7 +235,7 @@ class FloorPlanSVG:
         
         for floorplan in floorplans:
             floorplan['style'] = ""
-            img = self.getImage()
+            img = self.__getImage("crispEdges")
             img = Image.fromarray(img).convert('P', palette=Image.Palette.ADAPTIVE, colors=5)
             img = np.array(img)
             total = img.shape[0] * img.shape[1]
@@ -262,24 +256,19 @@ class FloorPlanSVG:
             
             index += 1
             
-        self.houseFloorVisibility(True)
-    
-    def houseFloorVisibility(self, visible=True):
-        floorplans = self.structure.select("g[class=Floor]")
-        
-        display = "display: none;"
-        if visible: display = ""
-        
-        for floorplan in floorplans:
-            floorplan['style'] = display
+        self.__houseFloorVisibility(True)
     
     def insertBoundingBox(self, key, parent, bounding_box):
+        if key is None:
+            return
         dct_key = (parent, key)
         if dct_key not in self.bounding_boxes:
             self.bounding_boxes[dct_key] = []
         self.bounding_boxes[dct_key].append(bounding_box)
     
     def insertBoundary(self, key, parent, boundary):
+        if key is None:
+            return
         dct_key = (parent, key)
         if dct_key not in self.boundaries:
             self.boundaries[dct_key] = []
