@@ -1,29 +1,20 @@
-/*
-#ff0000
-#ff8000
-#00ff00
-#0080ff
-#0000ff
-*/
-
 svg {
-    fill: #000000;
-    stroke: #000000;
+  fill: #000000;
+  stroke: #000000;
 }
 
 g,
 .Space,
 .FixedFurniture,
-.Railing,
 .Column,
 .WalkinLine marker {
-    fill: #ffffff;
-    stroke: #ffffff;
+  fill: #ffffff;
+  stroke: #ffffff;
 }
 
 text,
 .WalkinLine path {
-    display: none;
+  display: none;
 }
 
 /* pintu */
@@ -31,21 +22,22 @@ text,
 .Wall .Door .Threshold,
 .Wall .Door .Panel,
 .Wall .Door .PanelArea {
-    stroke-width: 0;
-    fill: #ff0000;
-    stroke: #ff0000;
+  stroke-width: 0;
+  fill: %%COLOR[0]%%;
+  stroke: %%COLOR[0]%%;
 }
 
 /* tembok */
+.Railing,
 .Wall {
-    fill: #00ff00;
-    stroke: #00ff00;
+  fill: %%COLOR[1]%%;
+  stroke: %%COLOR[1]%%;
 }
 
 /* jendela */
 .Wall .Window,
 .Wall .Window .Glass,
 .Wall .Window .Panel {
-    fill: #0000ff;
-    stroke: #0000ff;
+  fill: %%COLOR[2]%%;
+  stroke: %%COLOR[2]%%;
 }

@@ -1,3 +1,5 @@
+#!/bin/bash
+
 root_dir=/mnt/e/DATA/CHRISTIAN/KULIAH/TA/code/dataset/cubicasa5k
 #
 merge_dir=$root_dir/merge

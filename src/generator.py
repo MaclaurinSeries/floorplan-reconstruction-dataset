@@ -4,6 +4,8 @@ from FloorPlanSVG import FloorPlanSVG
 
 
 def main(args):
+    prepare_directory(args.output_directory)
+
     for folder in os.scandir(args.input_directory):
         if folder.is_dir():
             for filename in os.scandir(folder.path):
@@ -20,10 +22,26 @@ def process_image(os_filename, asset_dir, out_dir):
     
     floorplan = FloorPlanSVG(f'.\\{os_filename}', asset_dir)
     floorplan.setStyle(f'style_{style_number}')
-    print(floorplan.getFloorplanCount())
 #     floorplan.setStyle('boundaries')
     floorplan.setBackground(f'bg_{style_number}')
-    floorplan.saveStructure()
+    floorplan.saveStructure(out_dir)
+
+
+def prepare_directory(directory):
+    paths = [
+        f'{directory}\\roi-detection\\image',
+        f'{directory}\\roi-detection\\label',
+        f'{directory}\\room-classification\\graph',
+        f'{directory}\\room-classification\\label',
+        f'{directory}\\symbol-detection\\image',
+        f'{directory}\\symbol-detection\\label',
+        f'{directory}\\boundary-segmentation\\image',
+        f'{directory}\\boundary-segmentation\\label'
+    ]
+
+    for path in paths:
+        if not os.path.isdir(path):
+            os.makedirs(path)
 
 
 if __name__ == "__main__":

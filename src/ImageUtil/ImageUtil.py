@@ -28,9 +28,10 @@ def getFloorplanPolygon(img):
 
     for l in poly:
         pts = np.array(l['coordinates'][0], dtype=np.int32).T
+        
         results.append(pts[::-1])
 
-    return results
+    return sorted(results, key=lambda x: np.sum(x.mean(axis=1)))
 
 
 def resizeImage(img, height=-1, width=-1):

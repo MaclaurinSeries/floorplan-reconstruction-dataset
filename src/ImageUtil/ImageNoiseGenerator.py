@@ -8,7 +8,7 @@ __all__ = [
     'addNoise'
 ]
 
-def qualityReduction(img, q=10):
+def qualityReduction(img, q=20):
     with io.BytesIO() as output_buffer:
         size = img.shape
         img = Image.fromarray(img)

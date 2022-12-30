@@ -24,7 +24,20 @@ icons = [None,
  'SaunaBench',
  'Fireplace',
  'Bathtub',
- 'Chimney']
+ 'Chimney',
+ 'Stairs']
+
+boundaries = [
+    'Door',
+    'Wall',
+    'Window'
+]
+
+boundaries_selected = {
+    'Wall': 1,
+    'Window': 2,
+    'Door': 0
+}
 
 all_rooms = {"Background": 0,
              "Alcove": 1,
@@ -272,7 +285,8 @@ all_icons = {"Empty": 0,
              "IntegratedStove": 48,
              "Dishwasher": 49,
              "GeneralAppliance": 50,
-             "ShowerPlatform": 51}
+             "ShowerPlatform": 51,
+             "Stairs": 11}
 
 icons_selected = {"Window": 1,
                   "Door": 2,
@@ -308,6 +322,7 @@ icons_selected = {"Window": 1,
                   "Bathtub": 9,
                   "BathtubRound": 9,
                   "Chimney": 10,
+                  "Stairs": 11,
                   "Misc": None,
                   "BaseCabinetRound": None,
                   "BaseCabinetTriangle": None,
@@ -373,6 +388,7 @@ icon_name_map = {"Window": "Window",
                   "IntegratedStove": "ElectricalAppliance",
                   "Dishwasher": "ElectricalAppliance",
                   "GeneralAppliance": "ElectricalAppliance",
+                  "Stairs": "Stairs",
                   None: None}
 
 def getRoomID(room_name):
@@ -392,3 +408,14 @@ def getIconName(icon):
         return icons[icon]
     else:
         return icon_name_map[icon]
+
+def getBoundaryName(boundary):
+    if (isinstance(boundary, int)):
+        return boundaries[boundary]
+    elif (boundary in boundaries):
+        return boundary
+    else:
+        return None
+    
+def getBoundaryID(boundary_name):
+    return boundaries_selected[boundary_name]
