@@ -1,20 +1,37 @@
-import sys, getopt, os, io
-import re
+from logging import warning
+import sys, os, io, re
+
 import numpy as np
-from PIL import Image
+import nanoid.generate
+
 from bs4 import BeautifulSoup
 from cairosvg import svg2png
-from ImageUtil import remakeImage, openRgb, getFloorplanPolygon, qualityReduction, addNoise
-import HouseConfig as Mapper
+
 from PIL import Image, ImageDraw
+from skimage.morphology import medial_axis
 from rasterio.features import shapes
 import cv2
-import json
-import nanoid.generate
+
+import torch
+from torch_geometric.data import Data
+
+import HouseConfig as Mapper
+from ImageUtil import (
+    remakeImage,
+    openRgb,
+    getFloorplanPolygon,
+    qualityReduction,
+    addNoise,
+    ShapeCentroid,
+    ShapeMerge
+)
+
 
 __all__ = ['FloorPlanSVG']
 
+
 namechar = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+
 image_dim = (416, 416)
 fix_width = 1200
 
@@ -31,16 +48,158 @@ class FloorPlanSVG:
 
         self.background = None
         self.floors = []
+        self.texts = []
 
         self.__preprocessing()
 
 
     def __preprocessing(self):
         for text_tag in self.structure.select('text'):
+            if 'id' in text_tag.parent.attrs and text_tag.parent.attrs['id'] == 'NameLabel':
+                coord = self.__getTextCoord(text_tag)
+                self.texts.append({
+                    'VisibleText': None,
+                    'Coord': coord
+                })
             text_tag.extract()
 
         self.__extractFloor()
         self.__extractFurniture()
+    
+
+    def __getTextCoord(self, text_tag):
+        matrix1 = np.identity(3, dtype=np.float32)
+        matrix2 = np.identity(3, dtype=np.float32)
+
+        if text_tag.parent.parent.has_attr('transform'):
+            matrix1 = text_tag.parent.parent['transform']
+            matrix1 = matrix1[matrix1.find("(") + 1 : matrix1.find(")")]
+            matt = list(map(np.float32, matrix1.split(",")))
+            matrix1 = np.array([
+                [matt[3], matt[1], matt[5]],
+                [matt[2], matt[0], matt[4]],
+                [.0, .0, 1.0]
+            ])
+        if text_tag.parent.parent.parent.has_attr('transform'):
+            matrix2 = text_tag.parent.parent.parent['transform']
+            matrix2 = matrix2[matrix2.find("(") + 1 : matrix2.find(")")]
+            matt = list(map(np.float32, matrix2.split(",")))
+            matrix2 = np.array([
+                [matt[3], matt[1], matt[5]],
+                [matt[2], matt[0], matt[4]],
+                [.0, .0, 1.0]
+            ])
+
+        coord = np.array([[0],[0],[1]], dtype=np.float32)
+        coord = np.dot(matrix1, coord)
+        coord = np.dot(matrix2, coord)
+        return coord
+
+
+    def __preprocessGraph(self, room, boundary):
+        top, left = 10000, 10000
+        bottom, right = 0, 0
+        for s in (room + boundary):
+            top = min(top, np.min(s['bound'][0,:]))
+            left = min(left, np.min(s['bound'][1,:]))
+            bottom = max(bottom, np.max(s['bound'][0,:]))
+            right = max(right, np.max(s['bound'][1,:]))
+        
+        img = (np.zeros((int(bottom - top + 2), int(right - left + 2), 2)) + 255).astype(np.uint8)
+        pt = np.expand_dims(np.array([top, left]), axis=1)
+
+        door_index = 0
+        for s in boundary:
+            ID = s['id']
+            if Mapper.getBoundaryName(ID) != 'Door':
+                continue
+            color = (255, door_index)
+            door_index += 1
+            
+            cv2.fillPoly(img, pts=[np.round((s['bound'][:2] - pt).T[:,::-1]).astype(int)], color=color)
+        for i,s in enumerate(room):
+            ID = s['id']
+            color = (ID, i)
+
+            cv2.fillPoly(img, pts=[np.round((s['bound'][:2] - pt).T[:,::-1]).astype(int)], color=color)
+        return img, door_index, (top, left)
+
+    
+    def __extractGraph(self, floor):
+        roomCnt = len(floor['rooms'])
+        graph = np.zeros((roomCnt, roomCnt), dtype=np.int8) - 1
+        
+        img, doorCnt, roomBound = self.__preprocessGraph(floor['rooms'], floor['boundaries'])
+        skel = medial_axis(img[:,:,1] < 255)
+
+        roomDoor = np.zeros((doorCnt, roomCnt), dtype=np.bool8)
+
+        for trans in [(1, 0),(-1, 0),(0, -1),(0, 1)]:
+            shifted = np.roll(img, trans, axis=(1,0))
+            def conn(coord):
+                a = img[coord[0],coord[1],:]
+                b = shifted[coord[0],coord[1],:]
+                c = np.zeros(2) + 255
+                if (a == c).all() or (b == c).all():
+                    return -1
+                if b[0] < 255 and a[0] < 255:
+                    graph[b[1], a[1]] = 0
+                    graph[a[1], b[1]] = 0
+                elif b[0] == 255 and a[0] < 255:
+                    roomDoor[b[1], a[1]] = True
+                elif a[0] == 255 and b[0] < 255:
+                    roomDoor[a[1], b[1]] = True
+                return -1
+
+            indexes = np.argwhere(((((img == shifted).all(-1)) ^ 1) & skel))
+            np.apply_along_axis(conn, 1, indexes)
+
+        def rconn(rms):
+            idx = np.argwhere(rms).squeeze()
+            graph[idx[0],idx[1]] = 1
+            graph[idx[1],idx[0]] = 1
+            return -1
+        np.apply_along_axis(rconn, 1, roomDoor)
+
+        # convert adjacency matrix to adjacency list
+        edge_index = []
+        edge_attr = []
+        door_onehot = [[1, 0], [0, 1]]
+        for i in range(roomCnt):
+            for j in range(roomCnt):
+                if graph[i, j] >= 0:
+                    edge_index.append([i, j])
+                    edge_attr.append(door_onehot[graph[i, j]])
+
+        # target kelas ruangan
+        y = []
+        for room in floor['rooms']:
+            y.append(Mapper.oneHotRoomID(room['id']))
+        
+        # agregasi kelas furniture
+        x = np.zeros((roomCnt, Mapper.lenIconBoundary()))
+        top, left = roomBound
+
+        for furniture in floor['furnitures']:
+            center = ShapeCentroid(furniture['bound'])
+            room_type, room_id = img[int(center[0]) - top, int(center[1]) - left, :]
+            label = Mapper.oneHotIconID(furniture['id'])
+            
+            if room_type < 255:
+                x[room_id,:] = np.maximum(x[room_id,:], label)
+
+        def softmax(x):
+            return np.exp(x) / np.exp(x).sum()
+        def noise(x):
+            return 8 * x + np.random.rand(*x.shape)
+
+        x = torch.tensor(np.apply_along_axis(softmax, 1, noise(x)), dtype=torch.float)
+        y = torch.tensor(y, dtype=torch.float)
+        edge_index = torch.tensor(np.apply_along_axis(softmax, 1, noise(edge_index)), dtype=torch.long).transpose(0, 1)
+        edge_attr = torch.tensor(np.apply_along_axis(softmax, 1, noise(edge_attr)), dtype=torch.float)
+
+        graph = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
+        return graph
 
 
     def __extractFloor(self):
@@ -56,8 +215,27 @@ class FloorPlanSVG:
                 'id': floorplans[idx].g['id'],
                 'polygon': floorPoly.astype(np.uint16),
                 'furnitures': [],
-                'boundaries': []
+                'boundaries': [],
+                'rooms': []
             })
+    
+    
+    def __mergeRoom(self, rooms):
+        new_rooms = []
+        n_rooms = len(rooms)
+
+        for i in range(n_rooms):
+            if 'skip' in rooms[i] and rooms[i]['skip']:
+                continue
+            for j in range(i + 1, n_rooms):
+                if rooms[i]['id'] != rooms[j]['id']:
+                    continue
+                merged = ShapeMerge(rooms[i]['bound'], rooms[j]['bound'])
+                if merged is not None:
+                    rooms[j]['skip'] = True
+
+                    # TODO: blm selesai
+        return rooms
 
 
     def __extractFurniture(self):
@@ -72,7 +250,7 @@ class FloorPlanSVG:
             for e in struct.select("g"):
                 
                 if "FixedFurniture " in e.attrs['class']:
-                    icon_name = e.attrs['class'].replace('FixedFurniture ', '').split(' ')[0]
+                    icon_name = e.attrs['class'].split(' ')[1]
                     icon_name = Mapper.getIconName(icon_name)
                     icon_ID = Mapper.getIconID(icon_name)
 
@@ -86,13 +264,30 @@ class FloorPlanSVG:
                         'name': icon_name,
                         'bound': bound
                     })
+                if "Space " in e.attrs['class']:
+                    room_name = e.attrs['class'].split(' ')[1]
+                    try:
+                        room_name = Mapper.getRoomName(room_name)
+                        room_ID = Mapper.getRoomID(room_name)
+                    except:
+                        warning(f"Room {room_name} doesn't exist")
+                        continue
+                    poly = e.polygon.attrs["points"]
+                    poly = poly.split(' ')[:-1]
+                    poly = np.array([[1, *list(map(np.float32, a.split(',')))] for a in poly])
+                    
+                    self.floors[idx]['rooms'].append({
+                        'id': room_ID,
+                        'name': room_name,
+                        'bound': poly.T[::-1,:]
+                    })
                 if 'id' not in e.attrs:
                     continue
                 if e.attrs['id'] == 'Stairs':
                     bounds = []
                     for child in e:
                         bound = child.polygon.attrs["points"]
-                        bound = bound.split(' ')[:4]
+                        bound = bound.split(' ')[:-1]
                         bound = np.array([list(map(np.float32, a.split(','))) for a in bound])
                         bounds.append(bound.T[::-1,:])
                     bound = np.hstack(bounds)
@@ -116,6 +311,7 @@ class FloorPlanSVG:
                         'name': icon_name,
                         'bound': bound
                     })
+            self.floors[idx]['rooms'] = self.__mergeRoom(self.floors[idx]['rooms'])
 
             floorplans[idx]['style'] = ""
             img = self.__getImage("crispEdges")
@@ -249,7 +445,6 @@ class FloorPlanSVG:
                 image_dim[0] // 2 - newdim[0] // 2,
                 image_dim[1] // 2 - newdim[1] // 2,
             )
-            print(size, newdim, pt)
             resized[pt[0] : pt[0]+newdim[0], pt[1] : pt[1]+newdim[1], :] = img
         cv2.imwrite(directory, resized[:,:,::-1])
 
@@ -274,12 +469,12 @@ class FloorPlanSVG:
                 f.write(strg)
 
 
-    def __saveBoundingBox(self, transformation, floor, floorBound, directory):
+    def __saveBoundingBox(self, transformation, polygons, floorBound, directory):
         shape = (floorBound[2] - floorBound[0], floorBound[3] - floorBound[1])
         mx = max(shape[0], shape[1])
         with open(directory, "w") as f:
             first = True
-            for furniture in floor['furnitures']:
+            for furniture in polygons:
                 ID = furniture['id']
                 bound = furniture['bound']
 
@@ -295,11 +490,11 @@ class FloorPlanSVG:
                 first = False
 
                 f.write(strg)
-
-
-    def __preprocessGraph(self, fileID):
-        raise NotImplementedError
-        return
+    
+    
+    def __saveGraph(self, floor, directory):
+        graph = self.__extractGraph(floor)
+        torch.save(graph, directory)
 
 
     def setBackground(self, background):
@@ -365,22 +560,28 @@ class FloorPlanSVG:
             mask = Image.new('L', tmp_img.size, 0)
             ImageDraw.Draw(mask).polygon(transformed[::-1].T.flatten().tolist(), outline=255, fill=255)
 
-            cropped = Image.new("RGB", tmp_img.size, (255, 255, 255))
-            cropped.paste(tmp_img, mask=mask)
-
             top = int(np.min(transformed[0,:]))
             left = int(np.min(transformed[1,:]))
             bottom = int(np.max(transformed[0,:]))
             right = int(np.max(transformed[1,:]))
 
+            cropped = Image.new("RGB", tmp_img.size, (255, 255, 255))
+            cropped.paste(tmp_img, mask=mask)
+            cropped = np.asarray(cropped)[top:bottom,left:right]
+
+            # save gambar
             fileIDsymbol = nanoid.generate(namechar, 24)
             symbol_image_dir = f'{target_directory}/symbol-detection/image/{fileIDsymbol}.input.generated.png'
             symbol_poly_dir = f'{target_directory}/symbol-detection/label/{fileIDsymbol}.label.generated.txt'
 
-            self.__saveImage(np.asarray(cropped)[top:bottom,left:right], symbol_image_dir, bg='fill')
-            self.__saveBoundingBox(transformation, floor, [top, left, bottom, right], symbol_poly_dir)
+            self.__saveImage(cropped, symbol_image_dir, bg='fill')
+            self.__saveBoundingBox(transformation, floor['furnitures'] + floor['boundaries'], [top, left, bottom, right], symbol_poly_dir)
 
-            # TODO: save wall + pintu, dan save graph
+            # save graph
+            fileIDroom = nanoid.generate(namechar, 24)
+            room_image_dir = f'{target_directory}/room-classification/graph/{fileIDroom}.input.generated.pt'
+
+            self.__saveGraph(floor, room_image_dir)
 
 
         # self.__saveFloorsPoly(

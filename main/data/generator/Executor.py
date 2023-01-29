@@ -2,7 +2,6 @@ import sys, getopt, os, io
 import argparse
 from FloorPlanSVG import FloorPlanSVG
 
-
 def main(args):
     prepare_directory(args.output_directory)
 
@@ -32,11 +31,8 @@ def prepare_directory(directory):
         f'{directory}\\roi-detection\\image',
         f'{directory}\\roi-detection\\label',
         f'{directory}\\room-classification\\graph',
-        f'{directory}\\room-classification\\label',
         f'{directory}\\symbol-detection\\image',
-        f'{directory}\\symbol-detection\\label',
-        f'{directory}\\boundary-segmentation\\image',
-        f'{directory}\\boundary-segmentation\\label'
+        f'{directory}\\symbol-detection\\label'
     ]
 
     for path in paths:

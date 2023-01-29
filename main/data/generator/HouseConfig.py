@@ -1,4 +1,6 @@
-__all__ = ['getRoomID', 'getRoomName', 'getIconID', 'getIconName']
+import numpy as np
+
+__all__ = ['getRoomID', 'getRoomName', 'getBoundaryID', 'getBoundaryName', 'getIconID', 'getIconName', 'oneHotRoomID', 'oneHotBoundaryID', 'oneHotIconID', 'lenIconBoundary', 'lenRoom']
 
 rooms = ['Background',
  'Outdoor',
@@ -419,3 +421,32 @@ def getBoundaryName(boundary):
     
 def getBoundaryID(boundary_name):
     return boundaries_selected[boundary_name]
+
+def oneHotRoomID(room_ID):
+    room_len = len(rooms)
+    label = [.0] * room_len
+    label[room_ID] = 1.0
+
+    return label
+
+def oneHotBoundaryID(boundary_ID):
+    icon_len = len(icons)
+    boundary_len = len(boundaries)
+    label = [.0] * boundary_len
+    label[boundary_ID] = 1.0
+
+    return label + [.0] * icon_len
+
+def oneHotIconID(icon_ID):
+    icon_len = len(icons)
+    boundary_len = len(boundaries)
+    label = [.0] * icon_len
+    label[icon_ID] = 1.0
+
+    return [.0] * boundary_len + label
+
+def lenIconBoundary():
+    return len(icons) + len(boundaries)
+
+def lenRoom():
+    return len(rooms)
