@@ -6,7 +6,6 @@ svg {
 g,
 .Space,
 .FixedFurniture,
-.Column,
 .WalkinLine marker {
   fill: #ffffff;
   stroke: #ffffff;
@@ -18,17 +17,23 @@ text,
 }
 
 /* pintu */
-.Wall .Door,
-.Wall .Door .Threshold,
-.Wall .Door .Panel,
-.Wall .Door .PanelArea {
+.Wall .Door .Threshold {
   stroke-width: 0;
   fill: %%COLOR[0]%%;
   stroke: %%COLOR[0]%%;
 }
 
+.Wall .Door,
+.Wall .Door .Panel,
+.Wall .Door .PanelArea {
+  stroke-width: 0;
+  fill: none;
+  stroke: none;
+}
+
 /* tembok */
 .Railing,
+.Column,
 .Wall {
   fill: %%COLOR[1]%%;
   stroke: %%COLOR[1]%%;

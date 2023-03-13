@@ -1,14 +1,15 @@
 from PIL import Image
-import io
+import io, cv2
 import numpy as np
 import skimage
 
 __all__ = [
     'qualityReduction',
-    'addNoise'
+    'addNoise',
+    'modifyHue'
 ]
 
-def qualityReduction(img, q=20):
+def qualityReduction(img, q=60):
     with io.BytesIO() as output_buffer:
         size = img.shape
         img = Image.fromarray(img)
@@ -24,8 +25,13 @@ def addNoise(img, mode):
         return img
     
     if isinstance(img, np.ndarray) and issubclass(type(img.dtype), np.integer):
-        img = (img / 255.0).astype(np.float32)
+        img = (img / 127.0).astype(np.float32)
     
     noised = skimage.util.random_noise(img, mode=mode)
     noised = (noised * 255.0).astype(np.uint8)
     return noised
+
+def modifyHue(img):
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    hsv[:,:,0] = (hsv[:,:,0] + np.random.random_integers(low=-50, high=50)) % 180
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)

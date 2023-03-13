@@ -1,0 +1,22 @@
+/* tembok */
+.Wall {
+  fill: #a0837b;
+}
+.Column {
+  fill: #a0837b;
+}
+
+/* pintu */
+.Panel {
+  fill: #edd7cc;
+}
+
+/* tempat kosong */
+.Space {
+  fill: #edd7cc;
+}
+
+/* furniture */
+.FixedFurniture {
+  fill: #edd7cc;
+}

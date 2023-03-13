@@ -429,21 +429,27 @@ def oneHotRoomID(room_ID):
 
     return label
 
-def oneHotBoundaryID(boundary_ID):
+def oneHotBoundaryID(boundary_ID, with_icon=True):
     icon_len = len(icons)
     boundary_len = len(boundaries)
     label = [.0] * boundary_len
     label[boundary_ID] = 1.0
 
-    return label + [.0] * icon_len
+    if with_icon:
+        label = label + [.0] * icon_len
+    
+    return label
 
-def oneHotIconID(icon_ID):
+def oneHotIconID(icon_ID, with_boundary=True):
     icon_len = len(icons)
     boundary_len = len(boundaries)
     label = [.0] * icon_len
     label[icon_ID] = 1.0
 
-    return [.0] * boundary_len + label
+    if with_boundary:
+        label = [.0] * boundary_len + label
+    
+    return label
 
 def lenIconBoundary():
     return len(icons) + len(boundaries)

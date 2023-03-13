@@ -9,7 +9,9 @@ __all__ = [
     'resizeImage',
     'remakeImage',
     'openRgb',
-    'openRgba'
+    'openRgba',
+    'transparentToWhite',
+    'similarityFeature'
 ]
 
 
@@ -124,37 +126,66 @@ def openRgba(path):
     return np.asarray(img)
 
 
-def similarityFeature(img1, img2):
-    MIN_MATCHES = 50
+def transparentToWhite(img):
+    if img.shape[2] <= 3:
+        return img
     
-    img1 = cv2.cvtColor(img1,cv2.COLOR_BGR2GRAY)
-    img2 = cv2.cvtColor(img2,cv2.COLOR_BGR2GRAY)
-    
-    orb = cv2.ORB_create(nfeatures=500)
+    mask = 255 - img[:,:,3]
 
-    kp1, des1 = orb.detectAndCompute(img1,None)
-    kp2, des2 = orb.detectAndCompute(img2,None)
+    img[:,:,0] += mask
+    img[:,:,1] += mask
+    img[:,:,2] += mask
+    img = np.clip(img, a_max=255, a_min=0)
+    return img[:,:,:3]
+
+
+def similarityFeature(label, img):
+    MIN_MATCHES = 50
+
+    label = cv2.cvtColor(label,cv2.COLOR_BGR2GRAY)
+    img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+
+    sift = cv2.SIFT_create(600)
+
+    kp1, des1 = sift.detectAndCompute(label,None)
+    kp2, des2 = sift.detectAndCompute(img,None)
     
-    index_params = dict(algorithm=6,
-                        table_number=6,
-                        key_size=12,
-                        multi_probe_level=2)
-    search_params = {}
+    FLANN_INDEX_KDTREE = 1
+    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 64)
+    search_params = dict(checks = 20)
+
     flann = cv2.FlannBasedMatcher(index_params, search_params)
     matches = flann.knnMatch(des1, des2, k=2)
 
+    # bf = cv2.BFMatcher()
+    # matches = bf.knnMatch(des1,des2, k=2)
+
+    matchesMask = [[0,0] for _ in range(len(matches))]
     good_matches = []
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
+    for i,(m,n) in enumerate(matches):
+        if m.distance < 0.9 * n.distance:
             good_matches.append(m)
+            matchesMask[i] = [1,0]
     
     if len(good_matches) > MIN_MATCHES:
         src_points = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         dst_points = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        m, mask = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
-        corrected_img = cv2.warpPerspective(img1, m, (img2.shape[1], img2.shape[0]))
+        matrix, _ = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
 
-        return corrected_img
-    img3 = cv2.drawMatches(img1,kp1,img2,kp2,matches[:50],None, flags=2)
+        matrix[[0, 1], :] = matrix[[1, 0], :]
+        matrix[:, [0, 1]] = matrix[:, [1, 0]]
+        matrix[2, [0, 1]] = 0
 
-    return img3
+        draw_params = dict(matchColor = (0,255,0),
+                   singlePointColor = (255,0,0),
+                   matchesMask = matchesMask,
+                   flags = 0)
+
+        # img3 = cv2.drawMatchesKnn(label,kp1,img,kp2,matches,None,**draw_params)
+        # cv2.imwrite("saved.png", img3)
+        # cv2.imwrite("label.png", label)
+        # cv2.imwrite("img.png", img)
+
+        return matrix
+
+    return None
