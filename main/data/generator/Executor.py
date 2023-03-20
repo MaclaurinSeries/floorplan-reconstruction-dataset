@@ -31,7 +31,7 @@ def main(args, limiter=None):
                             asset_dir=args.asset_directory,
                             out_dir=args.output_directory,
                             save_image=save_image,
-                            ID=arg_id
+                            ID=folder.name
                         ))
                         arg_id += 1
             elif folder.is_file() and folder.name.endswith(".svg"):
@@ -137,4 +137,4 @@ if __name__ == "__main__":
                         help='txt file containing id of selected image',
                         dest='selected_image_dir')
     
-    main(parser.parse_args(), limiter=8)
+    main(parser.parse_args())

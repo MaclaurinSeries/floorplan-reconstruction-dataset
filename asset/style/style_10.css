@@ -7,7 +7,8 @@
 }
 
 /* pintu */
-.Panel {
+.Panel,
+#Window {
   fill: #f0d4c9;
 }
 

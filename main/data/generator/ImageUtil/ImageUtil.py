@@ -139,20 +139,27 @@ def transparentToWhite(img):
     return img[:,:,:3]
 
 
-def similarityFeature(label, img):
-    MIN_MATCHES = 50
+def similarityFeature(label, img,
+        min_matches=50,
+        sift_count=600,
+        trees=64,
+        checks=20,
+        distance_factor=0.9,
+        ransac_factor=5.0
+    ):
+    MIN_MATCHES = int(min_matches)
 
     label = cv2.cvtColor(label,cv2.COLOR_BGR2GRAY)
     img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
-    sift = cv2.SIFT_create(600)
+    sift = cv2.SIFT_create(int(sift_count))
 
     kp1, des1 = sift.detectAndCompute(label,None)
     kp2, des2 = sift.detectAndCompute(img,None)
     
     FLANN_INDEX_KDTREE = 1
-    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 64)
-    search_params = dict(checks = 20)
+    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = int(trees))
+    search_params = dict(checks = int(checks))
 
     flann = cv2.FlannBasedMatcher(index_params, search_params)
     matches = flann.knnMatch(des1, des2, k=2)
@@ -163,14 +170,14 @@ def similarityFeature(label, img):
     matchesMask = [[0,0] for _ in range(len(matches))]
     good_matches = []
     for i,(m,n) in enumerate(matches):
-        if m.distance < 0.9 * n.distance:
+        if m.distance < distance_factor * n.distance:
             good_matches.append(m)
             matchesMask[i] = [1,0]
     
     if len(good_matches) > MIN_MATCHES:
         src_points = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         dst_points = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        matrix, _ = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
+        matrix, _ = cv2.findHomography(src_points, dst_points, cv2.RANSAC, ransac_factor)
 
         matrix[[0, 1], :] = matrix[[1, 0], :]
         matrix[:, [0, 1]] = matrix[:, [1, 0]]

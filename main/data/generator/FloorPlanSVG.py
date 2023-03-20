@@ -805,13 +805,12 @@ class FloorPlanSVG:
         img, transformation = self.__createImage()
         tmp_img = Image.fromarray(img.astype(np.uint8))
         
-        fileIDroi = nanoid.generate(namechar, 24)
-        roi_image_dir = f'{target_directory}/roi-detection/image/{fileIDroi}G.png'
-        roi_poly_dir = f'{target_directory}/roi-detection/label/{fileIDroi}G.txt'
+        roi_image_dir = f'{target_directory}/roi-detection/image/G{self.ID}.png'
+        roi_poly_dir = f'{target_directory}/roi-detection/label/G{self.ID}.txt'
         self.__saveImage(img, roi_image_dir)
         self.__savePoly(transformation, img.shape, roi_poly_dir)
 
-        for floor in self.floors:
+        for floor_idx,floor in enumerate(self.floors):
             transformed = applyTransformation(floor['polygon'], transformation, dtype=np.int32)
 
             mask = Image.new('L', tmp_img.size, 0)
@@ -828,15 +827,15 @@ class FloorPlanSVG:
 
             # save gambar
             fileIDsymbol = nanoid.generate(namechar, 24)
-            symbol_image_dir = f'{target_directory}/symbol-detection/image/{fileIDsymbol}G.png'
-            symbol_poly_dir = f'{target_directory}/symbol-detection/label/{fileIDsymbol}G.txt'
+            symbol_image_dir = f'{target_directory}/symbol-detection/image/G{self.ID}F{floor_idx + 1}.png'
+            symbol_poly_dir = f'{target_directory}/symbol-detection/label/G{self.ID}F{floor_idx + 1}.txt'
 
             self.__saveImage(cropped, symbol_image_dir)
             self.__saveBoundingBox(transformation, floor['furnitures'] + floor['boundaries'], [top, left, bottom, right], symbol_poly_dir)
 
             # save graph
             fileIDroom = nanoid.generate(namechar, 24)
-            room_image_dir = f'{target_directory}/room-classification/graph/{fileIDroom}.pt'
+            room_image_dir = f'{target_directory}/room-classification/graph/G{self.ID}F{floor_idx + 1}.pt'
 
             self.__saveGraph(floor, room_image_dir)
 
@@ -852,29 +851,53 @@ class FloorPlanSVG:
         
         return prop > 0.1
 
+    
+    def displayOriginalImage(self, image_directory, similarity_param):
+        self.setStyle()
 
-    def saveOriginalImage(self, image_directory, target_directory):
+        sim_img, _ = self.__createImage(homography=True)
+        img = openRgb(image_directory)
+        shape = img.shape
+
+        transformation = similarityFeature(sim_img, img, **similarity_param)
+        if transformation is None:
+            return None, None
+
+        pts = []
+
+        for floor_idx,floor in enumerate(self.floors):
+            transformed = applyTransformation(floor['polygon'], transformation, dtype=np.int32)
+            pts.append(np.array([np.clip(transformed[1], 0,shape[1] - 1), np.clip(transformed[0], 0,shape[0] - 1)]).T.reshape((-1, 1, 2)))
+
+            for fur in floor['furnitures'] + floor['boundaries'] + floor['rooms']:
+                transformed = applyTransformation(fur['bound'], transformation, dtype=np.int32)
+                pts.append(np.array([np.clip(transformed[1], 0,shape[1] - 1), np.clip(transformed[0], 0,shape[0] - 1)]).T.reshape((-1, 1, 2)))
+        img = cv2.polylines(img, pts, True, (255, 0, 0), 1)
+        
+        return img[:,:,::-1], transformation
+
+
+    def saveOriginalImage(self, image_directory, target_directory, similarity_param, transformation=None):
         self.setStyle()
 
         sim_img, _ = self.__createImage(homography=True)
         img = openRgb(image_directory)
 
-        transformation = similarityFeature(sim_img, img)
         if transformation is None:
-            return
-        
-        if not self.homographyChecking(transformation, img.shape):
+            transformation = similarityFeature(sim_img, img, **similarity_param)
+            if not self.homographyChecking(transformation, img.shape):
+                return
+        if transformation is None:
             return
 
         tmp_img = Image.fromarray(img.astype(np.uint8))
 
-        fileIDroi = nanoid.generate(namechar, 24)
-        roi_image_dir = f'{target_directory}/roi-detection/image/{fileIDroi}T.png'
-        roi_poly_dir = f'{target_directory}/roi-detection/label/{fileIDroi}T.txt'
+        roi_image_dir = f'{target_directory}/roi-detection/image/O{self.ID}.png'
+        roi_poly_dir = f'{target_directory}/roi-detection/label/O{self.ID}.txt'
         self.__saveImage(img, roi_image_dir)
         self.__savePoly(transformation, img.shape, roi_poly_dir)
         
-        for floor in self.floors:
+        for floor_idx,floor in enumerate(self.floors):
             transformed = applyTransformation(floor['polygon'], transformation, dtype=np.int32)
 
             mask = Image.new('L', tmp_img.size, 0)
@@ -890,9 +913,8 @@ class FloorPlanSVG:
             cropped = np.asarray(cropped)[top:bottom,left:right]
 
             # save gambar
-            fileIDsymbol = nanoid.generate(namechar, 24)
-            symbol_image_dir = f'{target_directory}/symbol-detection/image/{fileIDsymbol}T.png'
-            symbol_poly_dir = f'{target_directory}/symbol-detection/label/{fileIDsymbol}T.txt'
+            symbol_image_dir = f'{target_directory}/symbol-detection/image/O{self.ID}F{floor_idx + 1}.png'
+            symbol_poly_dir = f'{target_directory}/symbol-detection/label/O{self.ID}F{floor_idx + 1}.txt'
 
             self.__saveImage(cropped, symbol_image_dir)
             self.__saveBoundingBox(transformation, floor['furnitures'] + floor['boundaries'], [top, left, bottom, right], symbol_poly_dir)

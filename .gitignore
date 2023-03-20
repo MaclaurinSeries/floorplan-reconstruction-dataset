@@ -3,6 +3,8 @@ __collection__
 cubicasa5k/
 Rent3Dpp/
 
+*.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

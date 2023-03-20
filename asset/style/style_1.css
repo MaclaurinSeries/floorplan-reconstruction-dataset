@@ -1,13 +1,12 @@
 /* tembok */
-.Wall {
-  fill: #1176ae;
-}
+.Wall,
 .Column {
   fill: #1176ae;
 }
 
 /* pintu */
-.Panel {
+.Panel,
+#Window {
   fill: #b1e4ff;
 }
 
