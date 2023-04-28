@@ -3,6 +3,8 @@ __collection__
 cubicasa5k/
 Rent3Dpp/
 
+run/*
+
 *.zip
 
 # Byte-compiled / optimized / DLL files
