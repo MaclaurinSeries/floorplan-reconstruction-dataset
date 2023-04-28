@@ -151,8 +151,12 @@ def train(model_name, trials, epoch, root):
               default=1,
               type=int,
               help="Specify the number of trials you want to run the experiment for.")
-def main(epochs, architecture, trials):
-    train(architecture, trials, epochs, './__collection__/room-classification')
+@click.option("--root",
+              default='./__collection__/room-classification',
+              type=str,
+              help="Root folder.")
+def main(epochs, architecture, trials, root):
+    train(architecture, trials, epochs, root)
 
 
 if __name__ == "__main__":
