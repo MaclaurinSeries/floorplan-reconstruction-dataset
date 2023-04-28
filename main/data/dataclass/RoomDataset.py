@@ -1,112 +1,86 @@
 import os
 import torch
-from torch_geometric.data import Dataset, Data
+import numpy as np
+from torch_geometric.data import Dataset, Data, InMemoryDataset
 import itertools
 
 __all__ = ['RoomDataset']
 
-class RoomDataset(Dataset):
-    def __init__(self, root, transform=None, pre_transform=None, pre_filter=None):
+
+def inMem(root, train_file, val_file, test_file):
+    data = []
+    for idx,file in enumerate([train_file, val_file, test_file]):
+        filenames = None
+        with open(os.path.join(root,file), 'r') as f:
+            filenames = f.read().split('\n')
+        dataset = []
+        for filename in filenames:
+            dt = torch.load(os.path.join(root, 'graph', f'{filename}.pt'))
+            if np.random.rand() < 0.5:
+                dt.x[9:] = 0
+            # dataset.append(Data(
+            #     x= dt.x,
+            #     edge_index= dt.edge_index,
+            #     edge_attr= dt.edge_attr,
+            #     y= dt.y
+            # ))
+            dataset.append(dt)
+        dat,slice = InMemoryDataset.collate(dataset)
+        data.append(dat)
+    data,slice = InMemoryDataset.collate(data)
+
+    data.train_mask = torch.zeros(slice['x'][-1], dtype=torch.bool)
+    data.train_mask[slice['x'][0]: slice['x'][1]] = True
+
+    data.val_mask = torch.zeros(slice['x'][-1], dtype=torch.bool)
+    data.val_mask[slice['x'][1]: slice['x'][2]] = True
+
+    data.test_mask = torch.zeros(slice['x'][-1], dtype=torch.bool)
+    data.test_mask[slice['x'][2]: slice['x'][3]] = True
+
+    return data
+
+class RoomDataset(InMemoryDataset):
+    def __init__(self, root, transform=None, pre_transform=None, pre_filter=None, filenames=None):
+        self.filenames = filenames
         super().__init__(root, transform=transform, pre_transform=pre_transform, pre_filter=pre_filter)
-        
+
+
     @property
     def processed_dir(self):
-        return os.path.join(self.root, 'graph-processed')
+        return os.path.join(self.root, 'graph')
+
 
     @property
     def raw_dir(self):
-        return os.path.join(self.root, 'graph-raw')
+        return os.path.join(self.root, 'graph')
+
 
     @property
     def raw_file_names(self):
-        return list(
-            itertools.chain.from_iterable(
-                [files for _,_,files in os.walk(self.raw_dir, topdown=False)]
-            )
-        )
+        filenames = None
+        with open(os.path.join(self.root, self.filenames), 'r') as f:
+            filenames = f.read().split('\n')
+        return [f'{filename}.pt' for filename in filenames]
 
-    @property
-    def file_IDs(self):
-        return [filename.split('.')[0] for filename in self.raw_file_names]
 
     @property
     def processed_file_names(self):
-        return [f'graph.{file_ID}.pt' for file_ID in self.file_IDs]
-    
+        filenames = None
+        with open(os.path.join(self.root, self.filenames), 'r') as f:
+            filenames = f.read().split('\n')
+        return [f'{filename}.pt' for filename in filenames]
+
+
     def process(self):
-        '''
-            file format:
-            n m
-            d0
-            d1
-            :
-            dn
-            a0 b0 c0
-            a1 b1 c1
-            :
-            am bm cm
-            e0
-            e1
-            :
-            en
+        raise NotImplementedError
 
-            penjelasan:
-            n banyaknya kamar (vertex)
-            m banyaknya hubungan antar kamar (edge)
-            a dan b adalah dua kamar yang berhubungan, masing2 pada range [0, n)
-            c adalah vector representasi jenis hubungan (pintu[1]/tanpa sekat[0])
-            d adalah vector representasi hasil agregasi onehot-enc dari furniture2 dalam kamar
-            e adalah vector representasi jenis kamar (y label)
-        '''
-        for i,raw_path in enumerate(self.raw_paths):
-            file_ID = self.file_IDs[i]
 
-            with open(raw_path, 'r') as f:
-                lines = [line.rstrip() for line in f]
-                n,m = list(map(
-                    int,
-                    lines[0].split()
-                ))
-
-                x = []
-                edge_index = []
-                edge_attr = []
-                y = []
-                for i in range(n):
-                    x.append(
-                        list(map(
-                            int,
-                            lines[i + 1].split()
-                        ))
-                    )
-                for i in range(m):
-                    edge = list(map(
-                        int,
-                        lines[i + n + 1].split()
-                    ))
-                    edge_index.append(edge[:2])
-                    edge_attr.append(edge[2:])
-                for i in range(n):
-                    y.append(
-                        list(map(
-                            int,
-                            lines[i + m + n + 1].split()
-                        ))
-                    )
-
-                x = torch.tensor(x, dtype=torch.float)
-                
-                edge_attr = torch.tensor(edge_attr, dtype=torch.float)
-                y = torch.tensor(y, dtype=torch.float)
-
-                data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
-
-                torch.save(data, os.path.join(self.processed_dir, f'graph.{file_ID}.pt'))
-    
     def len(self):
-        return len(self.file_IDs)
+        return len(self.processed_file_names)
+
 
     def get(self, idx):
-        file_ID = self.file_IDs[idx]
-        data = torch.load(os.path.join(self.processed_dir, f'graph.{file_ID}.pt'))
+        filename = self.processed_file_names[idx]
+        data = torch.load(os.path.join(self.processed_dir, filename))
         return data

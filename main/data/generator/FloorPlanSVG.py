@@ -423,62 +423,63 @@ class FloorPlanSVG:
             struct.parent['style'] = ''
             img = self.__getImage("crispEdges")
             img = np.array(Image.fromarray(img))[:,:,:3]
+            self.floors['idx']['mask'] = np.sum(img, axis=2)
             # cv2.imwrite("saved.png", img)
 
-            boundaries_array = []
+            # boundaries_array = []
             
-            for i,c in enumerate(color):
-                mask = (img == np.array(c)).all(-1)
-                F = mask.astype(np.uint16)
+            # for i,c in enumerate(color):
+            #     mask = (img == np.array(c)).all(-1)
+            #     F = mask.astype(np.uint16)
 
-                poly = (s for _, (s, _) in enumerate(shapes(F, mask=mask)))
+            #     poly = (s for _, (s, _) in enumerate(shapes(F, mask=mask)))
 
-                for l in poly:
-                    pts = np.array(l['coordinates'][0], dtype=np.int32)
-                    # pts = np.apply_along_axis(lambda a: [1, *a], 1, pts)[:,::-1].T
-                    pts = pts[:,::-1].T
+            #     for l in poly:
+            #         pts = np.array(l['coordinates'][0], dtype=np.int32)
+            #         # pts = np.apply_along_axis(lambda a: [1, *a], 1, pts)[:,::-1].T
+            #         pts = pts[:,::-1].T
                     
-                    boundaries_array.append({
-                        'id': i,
-                        'name': Mapper.getBoundaryName(i),
-                        'bound': pts
-                    })
+            #         boundaries_array.append({
+            #             'id': i,
+            #             'name': Mapper.getBoundaryName(i),
+            #             'bound': pts
+            #         })
             
-            polygon_descriptor = PolygonSimplificationDescriptor([
-                e['bound'] for e in self.floors[idx]['rooms'] + boundaries_array
-            ])
+            # polygon_descriptor = PolygonSimplificationDescriptor([
+            #     e['bound'] for e in self.floors[idx]['rooms'] + boundaries_array
+            # ])
 
-            for i in range(len(self.floors[idx]['rooms'])):
-                self.floors[idx]['rooms'][i]['bound'] = polygon_descriptor(self.floors[idx]['rooms'][i]['bound'])
+            # for i in range(len(self.floors[idx]['rooms'])):
+            #     self.floors[idx]['rooms'][i]['bound'] = polygon_descriptor(self.floors[idx]['rooms'][i]['bound'])
             
-            boundaries_array = sorted(boundaries_array, key=lambda e: abs(e['id'] - Mapper.getBoundaryID('Wall')))
-            img = np.zeros_like(img)
-            for i,polygon in enumerate(boundaries_array):
-                pts = polygon_descriptor(polygon['bound'])
-                object_color = color[boundaries_array[i]['id']]
+            # boundaries_array = sorted(boundaries_array, key=lambda e: abs(e['id'] - Mapper.getBoundaryID('Wall')))
+            # img = np.zeros_like(img)
+            # for i,polygon in enumerate(boundaries_array):
+            #     pts = polygon_descriptor(polygon['bound'])
+            #     object_color = color[boundaries_array[i]['id']]
 
-                if len(pts[0]) == 0:
-                    continue
-                cv2.fillPoly(img, pts=[(pts.T[:,::-1]).astype(int)], color=object_color)
-            for room in self.floors[idx]['rooms']:
-                cv2.fillPoly(img, pts=[(room['bound'].T[:,1::-1]).astype(int)], color=(255,255,255))
+            #     if len(pts[0]) == 0:
+            #         continue
+            #     cv2.fillPoly(img, pts=[(pts.T[:,::-1]).astype(int)], color=object_color)
+            # for room in self.floors[idx]['rooms']:
+            #     cv2.fillPoly(img, pts=[(room['bound'].T[:,1::-1]).astype(int)], color=(255,255,255))
             
-            for i,c in enumerate(color):
-                mask = (img == np.array(c)).all(-1)
-                F = mask.astype(np.uint16)
+            # for i,c in enumerate(color):
+            #     mask = (img == np.array(c)).all(-1)
+            #     F = mask.astype(np.uint16)
 
-                poly = (s for _, (s, _) in enumerate(shapes(F, mask=mask)))
+            #     poly = (s for _, (s, _) in enumerate(shapes(F, mask=mask)))
 
-                for l in poly:
-                    pts = np.array(l['coordinates'][0], dtype=np.int32)
-                    # pts = np.apply_along_axis(lambda a: [1, *a], 1, pts)[:,::-1].T
-                    pts = pts[:,::-1].T
+            #     for l in poly:
+            #         pts = np.array(l['coordinates'][0], dtype=np.int32)
+            #         # pts = np.apply_along_axis(lambda a: [1, *a], 1, pts)[:,::-1].T
+            #         pts = pts[:,::-1].T
                     
-                    self.floors[idx]['boundaries'].append({
-                        'id': i,
-                        'name': Mapper.getBoundaryName(i),
-                        'bound': pts
-                    })
+            #         self.floors[idx]['boundaries'].append({
+            #             'id': i,
+            #             'name': Mapper.getBoundaryName(i),
+            #             'bound': pts
+            #         })
 
             struct.parent['style'] = "display: none;"
         self.__houseFloorVisibility(True)
@@ -805,10 +806,10 @@ class FloorPlanSVG:
         img, transformation = self.__createImage()
         tmp_img = Image.fromarray(img.astype(np.uint8))
         
-        roi_image_dir = f'{target_directory}/roi-detection/image/G{self.ID}.png'
-        roi_poly_dir = f'{target_directory}/roi-detection/label/G{self.ID}.txt'
-        self.__saveImage(img, roi_image_dir)
-        self.__savePoly(transformation, img.shape, roi_poly_dir)
+        # roi_image_dir = f'{target_directory}/roi-detection/image/G{self.ID}.png'
+        # roi_poly_dir = f'{target_directory}/roi-detection/label/G{self.ID}.txt'
+        # self.__saveImage(img, roi_image_dir)
+        # self.__savePoly(transformation, img.shape, roi_poly_dir)
 
         for floor_idx,floor in enumerate(self.floors):
             transformed = applyTransformation(floor['polygon'], transformation, dtype=np.int32)
@@ -827,15 +828,16 @@ class FloorPlanSVG:
 
             # save gambar
             fileIDsymbol = nanoid.generate(namechar, 24)
-            symbol_image_dir = f'{target_directory}/symbol-detection/image/G{self.ID}F{floor_idx + 1}.png'
-            symbol_poly_dir = f'{target_directory}/symbol-detection/label/G{self.ID}F{floor_idx + 1}.txt'
+            symbol_image_dir = f'{target_directory}/symbol-detection/new-image/G{self.ID}F{floor_idx + 1}.png'
+            symbol_poly_dir = f'{target_directory}/symbol-detection/new-icon-label/G{self.ID}F{floor_idx + 1}.txt'
+            boundary_poly_dir = f'{target_directory}/symbol-detection/new-boundary-label/G{self.ID}F{floor_idx + 1}.txt'
 
             self.__saveImage(cropped, symbol_image_dir)
             self.__saveBoundingBox(transformation, floor['furnitures'] + floor['boundaries'], [top, left, bottom, right], symbol_poly_dir)
 
             # save graph
             fileIDroom = nanoid.generate(namechar, 24)
-            room_image_dir = f'{target_directory}/room-classification/graph/G{self.ID}F{floor_idx + 1}.pt'
+            room_image_dir = f'{target_directory}/room-classification/new-graph/G{self.ID}F{floor_idx + 1}.pt'
 
             self.__saveGraph(floor, room_image_dir)
 

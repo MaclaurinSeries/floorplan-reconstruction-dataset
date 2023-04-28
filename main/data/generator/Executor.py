@@ -101,7 +101,10 @@ def prepare_directory(directory):
         f'{directory}\\roi-detection\\label',
         f'{directory}\\room-classification\\graph',
         f'{directory}\\symbol-detection\\image',
-        f'{directory}\\symbol-detection\\label'
+        f'{directory}\\symbol-detection\\label',
+        f'{directory}\\room-classification\\new-graph',
+        f'{directory}\\symbol-detection\\new-image',
+        f'{directory}\\symbol-detection\\new-label'
     ]
 
     for path in paths:

@@ -2,23 +2,28 @@ import numpy as np
 
 __all__ = ['getRoomID', 'getRoomName', 'getBoundaryID', 'getBoundaryName', 'getIconID', 'getIconName', 'oneHotRoomID', 'oneHotBoundaryID', 'oneHotIconID', 'lenIconBoundary', 'lenRoom']
 
-rooms = ['Background',
+rooms = ['Background', # 0
  'Outdoor',
- 'Wall',
+ 'Wall', # 2
  'Kitchen',
  'Dining',
  'Bedroom',
  'Bath',
  'Entry',
- 'Railing',
+ 'Railing', # 8
  'Storage',
  'Garage',
  'Room',
  'LivingRoom']
 
-icons = [None,
- 'Window',
+# sebelumnya
+# none, window, door, closet, ....
+
+# perubahan, index icon bakal dikurangi 3
+
+icons = [
  'Door',
+ 'Window',
  'Closet',
  'ElectricalAppliance',
  'Toilet',
@@ -290,58 +295,61 @@ all_icons = {"Empty": 0,
              "ShowerPlatform": 51,
              "Stairs": 11}
 
-icons_selected = {"Window": 1,
-                  "Door": 2,
-                  "Closet": 3,
-                  "ClosetRound": 3,
-                  "ClosetTriangle": 3,
-                  "CoatCloset": 3,
-                  "CoatRack": 3,
-                  "CounterTop": 3,
-                  "Housing": 3,
-                  "ElectricalAppliance": 4,
-                  "WoodStove": 4,
-                  "GasStove": 4,
-                  "Toilet": 5,
-                  "Urinal": 5,
-                  "SideSink": 6,
-                  "Sink": 6,
-                  "RoundSink": 6,
-                  "CornerSink": 6,
-                  "DoubleSink": 6,
-                  "DoubleSinkRight": 6,
-                  "WaterTap": 6,
-                  "SaunaBenchHigh": 7,
-                  "SaunaBenchLow": 7,
-                  "SaunaBenchMid": 7,
-                  "SaunaBench": 7,
-                  "Fireplace": 8,
-                  "FireplaceCorner": 8,
-                  "FireplaceRound": 8,
-                  "PlaceForFireplace": 8,
-                  "PlaceForFireplaceCorner": 8,
-                  "PlaceForFireplaceRound": 8,
-                  "Bathtub": 9,
-                  "BathtubRound": 9,
-                  "Chimney": 10,
-                  "Stairs": 11,
-                  "Misc": None,
-                  "BaseCabinetRound": None,
-                  "BaseCabinetTriangle": None,
-                  "BaseCabinet": None,
-                  "WallCabinet": None,
-                  "Shower": None,
-                  "ShowerCab": None,
-                  "ShowerPlatform": None,
-                  "ShowerScreen": None,
-                  "ShowerScreenRoundRight": None,
-                  "ShowerScreenRoundLeft": None,
-                  "Jacuzzi": None,
-                  None: None}
+icons_selected = {
+    "Closet": 0,
+    "ClosetRound": 0,
+    "ClosetTriangle": 0,
+    "CoatCloset": 0,
+    "CoatRack": 0,
+    "CounterTop": 0,
+    "Housing": 0,
+    "ElectricalAppliance": 1,
+    "WoodStove": 1,
+    "GasStove": 1,
+    "SaunaStove": 1,
+    "Toilet": 2,
+    "Urinal": 2,
+    "SideSink": 3,
+    "Sink": 3,
+    "RoundSink": 3,
+    "CornerSink": 3,
+    "DoubleSink": 3,
+    "DoubleSinkRight": 3,
+    "WaterTap": 3,
+    "SaunaBenchHigh": 4,
+    "SaunaBenchLow": 4,
+    "SaunaBenchMid": 4,
+    "SaunaBench": 4,
+    "Fireplace": 5,
+    "FireplaceCorner": 5,
+    "FireplaceRound": 5,
+    "PlaceForFireplace": 5,
+    "PlaceForFireplaceCorner": 5,
+    "PlaceForFireplaceRound": 5,
+    "Bathtub": 6,
+    "BathtubRound": 6,
+    "Chimney": 7,
+    "Misc": None,
+    "BaseCabinetRound": None,
+    "BaseCabinetTriangle": None,
+    "BaseCabinet": None,
+    "WallCabinet": None,
+    "Shower": None,
+    "ShowerCab": None,
+    "ShowerPlatform": None,
+    "ShowerScreen": None,
+    "ShowerScreenRoundRight": None,
+    "ShowerScreenRoundLeft": None,
+    "Jacuzzi": None,
+    "WashingMachine": None,
+    "IntegratedStove": 1,
+    "Dishwasher": 1,
+    "GeneralAppliance": 1,
+    "Stairs": 8,
+    None: None
+}
 
-icon_name_map = {"Window": "Window",
-                  "Door": "Door",
-                  "Closet": "Closet",
+icon_name_map = {"Closet": "Closet",
                   "ClosetRound": "Closet",
                   "ClosetTriangle": "Closet",
                   "CoatCloset": "Closet",
@@ -429,7 +437,7 @@ def oneHotRoomID(room_ID):
 
     return label
 
-def oneHotBoundaryID(boundary_ID, with_icon=True):
+def oneHotBoundaryID(boundary_ID, with_icon=False):
     icon_len = len(icons)
     boundary_len = len(boundaries)
     label = [.0] * boundary_len
@@ -440,7 +448,7 @@ def oneHotBoundaryID(boundary_ID, with_icon=True):
     
     return label
 
-def oneHotIconID(icon_ID, with_boundary=True):
+def oneHotIconID(icon_ID, with_boundary=False):
     icon_len = len(icons)
     boundary_len = len(boundaries)
     label = [.0] * icon_len
@@ -453,6 +461,12 @@ def oneHotIconID(icon_ID, with_boundary=True):
 
 def lenIconBoundary():
     return len(icons) + len(boundaries)
+
+def lenBoundary():
+    return len(boundaries)
+
+def lenIcon():
+    return len(icons)
 
 def lenRoom():
     return len(rooms)
